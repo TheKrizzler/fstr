@@ -1,5 +1,5 @@
 # fstr: Automatic format string payloads
-fstr is a powerful tool which instantly generates payloads for arbitrary writes using format string vulnerabilities. Unlike other automated payload generators, fstr writes all addresses to the end of the payload instead of the beginning to make sure that the vulnerable printf acutally reaches all the format specifiers.
+fstr is a powerful, lightweight tool which instantly generates payloads for arbitrary writes using format string vulnerabilities. Unlike other automated payload generators, fstr writes all addresses to the end of the payload instead of the beginning to make sure that the vulnerable printf acutally reaches all the format specifiers.
 ![demo](images/demo.png)
 
 # Installation

