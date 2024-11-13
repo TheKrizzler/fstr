@@ -2,9 +2,9 @@ from colorama import Fore, Style
 import argparse
 
 class FormatString64:
-	def __init__(self,writes: dict,prepend='',append='',offset=1):
+	def __init__(self,writes: dict,offset=1,append=''):
 		self.writes = writes
-		self.prepend = prepend.encode()
+		#self.prepend = prepend.encode()
 		self.append = append.encode()
 		self.offset = offset
 		self.formatString = b''
@@ -90,10 +90,11 @@ class FormatString64:
 
 		return sorted(finalList,key=lambda x: x[1])
 
-	# This function relies on the 'writes' parameter being sorted by index 1 in each element
+	# This function relies on the 'writes' parameter being sorted by index 1 in each element.
 	def _createFormatSpecifiers(self,writes):
 		totalWritten = 0
-		formatSpecifiers = self.prepend
+		formatSpecifiers = b''
+		prependIsAdded = False
 		for address,data,size in writes:
 			if data == 0:
 				match size:
@@ -159,9 +160,9 @@ class FormatString64:
 		return strlen
 
 class FormatString32:
-	def __init__(self,writes: dict,prepend: str,append: str,offset=0):
+	def __init__(self,writes: dict,offset=0,append=''):
 		self.writes = writes
-		self.prepend = prepend.encode()
+		#self.prepend = prepend.encode()
 		self.append = append.encode()
 		self.offset = offset
 		self.formatString = b''
@@ -251,7 +252,7 @@ class FormatString32:
 	# This function relies on the 'writes' parameter being sorted by index 1 in each element
 	def _createFormatSpecifiers(self,writes):
 		totalWritten = 0
-		formatSpecifiers = self.prepend
+		formatSpecifiers = b''
 		for address,data,size in writes:
 			if data == 0:
 				match size:
@@ -322,7 +323,7 @@ def main():
 	argParser.add_argument('-w','--write',action='append',required=True,help=f'{Style.BRIGHT}REQUIRED{Style.RESET_ALL} - Specify a single address:data pair in hex, i.e 0x404000:0x1337. Can be used multiple times.',type=str)
 	argParser.add_argument('--arch',choices=['32','64'],required=True,help=f'{Style.BRIGHT}REQUIRED{Style.RESET_ALL} - Specify either 32-bit or 64-bit architecture')
 	argParser.add_argument('-o','--offset',default=0,help='Specify the offset at which your input is found using a format string vulnerability',type=int)
-	argParser.add_argument('-p','--prepend',default='',help='Specify a string to prepend to the payload',type=str)
+	#argParser.add_argument('-p','--prepend',default='',help='Specify a string to prepend to the payload',type=str)
 	argParser.add_argument('-a','--append',default='',help='Specify a string to append to the payload',type=str)
 	argParser.add_argument('-r','--raw',action='store_true',help='Outputs the only final payload as raw bytes.')
 	args = vars(argParser.parse_args())
@@ -330,10 +331,10 @@ def main():
 	writes = parseWrites(args['write'])
 	if args['arch'] == '32':
 		FormatString64.unnecessaryHeader()
-		fmtstr = FormatString32(writes=writes,prepend=args['prepend'],append=args['append'],offset=args['offset'])
+		fmtstr = FormatString32(writes=writes,append=args['append'],offset=args['offset'])
 	elif args['arch'] == '64':
 		FormatString32.unnecessaryHeader()
-		fmtstr = FormatString64(writes=writes,prepend=args['prepend'],append=args['append'],offset=args['offset'])
+		fmtstr = FormatString64(writes=writes,append=args['append'],offset=args['offset'])
 	
 	if args['raw']:
 		print(fmtstr._createFormatString().decode())
