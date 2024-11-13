@@ -324,7 +324,7 @@ def main():
 	argParser.add_argument('-o','--offset',default=0,help='Specify the offset at which your input is found using a format string vulnerability',type=int)
 	argParser.add_argument('-p','--prepend',default='',help='Specify a string to prepend to the payload',type=str)
 	argParser.add_argument('-a','--append',default='',help='Specify a string to append to the payload',type=str)
-	argParser.add_argument('--raw',action='store_true',help='Outputs the only final payload as raw bytes.')
+	argParser.add_argument('-r','--raw',action='store_true',help='Outputs the only final payload as raw bytes.')
 	args = vars(argParser.parse_args())
 
 	writes = parseWrites(args['write'])
