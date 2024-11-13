@@ -2,7 +2,7 @@ from colorama import Fore, Style
 import argparse
 
 class FormatString64:
-	def __init__(self,writes: dict,prepend: str,append: str,offset=1):
+	def __init__(self,writes: dict,prepend='',append='',offset=1):
 		self.writes = writes
 		self.prepend = prepend.encode()
 		self.append = append.encode()
