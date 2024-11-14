@@ -18,7 +18,6 @@ class FormatString64:
 		print(Fore.GREEN+Style.DIM+'|  _|/ __|| __|| \'__|')
 		print(Fore.GREEN+Style.NORMAL+'| |  \\__ \\| |_ | |   ')
 		print(Fore.GREEN+Style.BRIGHT+'|_|  |___/ \\__||_|   '+Fore.RESET+Style.RESET_ALL)
-		print(Fore.GREEN+Style.BRIGHT+'by @TheKrizzler'+Fore.RESET+Style.RESET_ALL)
 
 	def info(self,info):
 		print(f'[{Fore.BLUE}*{Fore.RESET}] {info}')
@@ -252,7 +251,6 @@ class FormatString32:
 		print(Fore.GREEN+Style.DIM+'|  _|/ __|| __|| \'__|')
 		print(Fore.GREEN+Style.NORMAL+'| |  \\__ \\| |_ | |   ')
 		print(Fore.GREEN+Style.BRIGHT+'|_|  |___/ \\__||_|   '+Fore.RESET+Style.RESET_ALL)
-		print(Fore.GREEN+Style.BRIGHT+'by @TheKrizzler'+Fore.RESET+Style.RESET_ALL)
 
 	def info(self,info):
 		print(f'[{Fore.BLUE}*{Fore.RESET}] {info}')
