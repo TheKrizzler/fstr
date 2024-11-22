@@ -2,9 +2,9 @@ from colorama import Fore, Style
 import argparse
 
 class FormatString64:
-	def __init__(self,writes: dict,offset=1,append='',max_write=0):
+	def __init__(self,writes: dict,offset=1,prepend=b'',append='',max_write=0):
 		self.writes = writes
-		#self.prepend = prepend.encode()
+		self.prepend = prepend
 		self.append = append.encode()
 		self.offset = offset
 		self.max_write = max_write # 0 means no limit
@@ -90,6 +90,7 @@ class FormatString64:
 			else:
 				firstOptList.append((initialList[index][0],initialList[index][1],2))
 				firstOptList.append((initialList[index+1][0],initialList[index+1][1],2))
+		
 		# Half write sizes (quad word, double word, word, byte) until optimized
 		finalList = firstOptList
 		if self.max_write:
@@ -104,15 +105,8 @@ class FormatString64:
 					address,data,size = firstOptList[index]
 					secondOptList.append((address,data,size))
 			finalList = secondOptList
-		# Finally reduce null-byte writes
-		sortedList = sorted(finalList, key=lambda x:x[0])
-		for index,entry in enumerate(sortedList[:-1]):
-			address,data,size = entry
-			if data == 0 and sortedList[index+1][0] - address == 2 and sortedList[index+1][2] == 2:
-				thirdOptList.append((address,sortedList[index+1][1],size*2))
-			else:
-				thirdOptList.append((address,data,size))
-		finalList = thirdOptList
+			self.debug(secondOptList)
+
 		# Finally reduce null-byte writes
 		sortedList = sorted(finalList, key=lambda x:x[0])
 		done = False
@@ -121,10 +115,10 @@ class FormatString64:
 			address,data,size = sortedList[i]
 			if sortedList[i+1][1] == 0 and sortedList[i+1][0] - address == 2 and sortedList[i+1][2] == 2 and size == 2:
 				thirdOptList.append((address,data,size*2))
-				i += 1
+				i += 2
 			else:
 				thirdOptList.append((address,data,size))
-			i += 1
+				i += 1
 			if i >= len(sortedList)-1:
 				try:
 					thirdOptList.append((sortedList[i][0],sortedList[i][1],sortedList[i][2]))
@@ -138,7 +132,7 @@ class FormatString64:
 	# This function relies on the 'writes' parameter being sorted by index 1 in each element.
 	def _createFormatSpecifiers(self,writes):
 		totalWritten = 0
-		formatSpecifiers = b''
+		formatSpecifiers = self.prepend
 		prependIsAdded = False
 		for address,data,size in writes:
 			if data == 0:
